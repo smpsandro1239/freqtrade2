@@ -1,0 +1,20 @@
+IT_CONFIG_GLOBAL.gitconfig</path>
+<content"># Configuração Git Global para evitar warnings de LF/CRLF
+# Para usar: copie para ~/.gitconfig no Windows ou ~/.config/git/config no Linux/Mac
+
+[core]
+    # AutoCRLF: Converte CRLF para LF no commit, mas não no checkout
+    autocrlf = input
+    # SafeCRLF: Verifica inconsistências de quebras de linha
+    safecrlf = true
+    # EOL: Força quebras de linha LF para ficheiros de texto
+    eol = lf
+
+[attributes]
+    # Processamento de atributos baseado em .gitattributes do repositório
+    text = auto
+
+[filter "crlf"]
+    # Filtro customizado para quebras de linha
+    clean = sed 's/\\r$//'
+    smudge = sed 's/$/\\r/'

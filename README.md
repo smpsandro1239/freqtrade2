@@ -1,4 +1,5 @@
-# 📈 Sistema de Trading Automatizado
+EADME.md</path>
+<content"># 📈 Sistema de Trading Automatizado
 
 Sistema completo de trading automatizado com interface web moderna e API robusta para análise de dados de mercado e execução de estratégias de trading automatizadas.
 
