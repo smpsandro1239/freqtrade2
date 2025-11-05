@@ -1,0 +1,620 @@
+<!DOCTYPE html>
+<html lang="pt-PT">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gráficos TradingView-like com Indicadores</title>
+<!-- CSS Bootstrap -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css">
+
+<!-- Chart.js para gráficos -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+
+<!-- Axios e Bootstrap JS -->
+<script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+<style>
+    body { font-family: Arial, sans-serif; background-color: #f8f9fa; }
+    .chart-container { height: 600px; border: 1px solid #ddd; margin-bottom: 20px; }
+    .indicator-toggle { margin: 5px; }
+    .trading-panel { background-color: white; padding: 20px; border-radius: 8px; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+    #trade-history { max-height: 200px; overflow-y: auto; border: 1px solid #eee; padding: 10px; border-radius: 4px; }
+    .loading { opacity: 0.6; pointer-events: none; }
+    .status-indicator { width: 10px; height: 10px; border-radius: 50%; display: inline-block; margin-right: 5px; }
+    .status-active { background-color: #28a745; }
+    .status-inactive { background-color: #dc3545; }
+</style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <div class="container-fluid">
+            <span class="navbar-brand mb-0 h1">📈 TradingView-like Charts</span>
+            <span class="navbar-text">
+                <span class="status-indicator" id="connection-status"></span>
+                <span id="status-text">Conectado</span>
+            </span>
+        </div>
+    </nav>
+
+    <div class="container-fluid">
+        <div class="row">
+            <div class="col-md-9">
+                <div class="chart-container" id="chart"></div>
+            </div>
+            <div class="col-md-3">
+                <div class="trading-panel">
+                    <h4>⚙️ Configurações</h4>
+                    <div class="form-group">
+                        <label for="symbol">Par de Moedas:</label>
+                        <select class="form-control" id="symbol">
+                            <option value="BTCUSDT">BTC/USDT</option>
+                            <option value="ETHUSDT">ETH/USDT</option>
+                            <option value="BNBUSDT">BNB/USDT</option>
+                            <option value="ADAUSDT">ADA/USDT</option>
+                            <option value="XRPUSDT">XRP/USDT</option>
+                            <option value="SOLUSDT">SOL/USDT</option>
+                            <option value="DOTUSDT">DOT/USDT</option>
+                            <option value="MATICUSDT">MATIC/USDT</option>
+                            <option value="AVAXUSDT">AVAX/USDT</option>
+                            <option value="LINKUSDT">LINK/USDT</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="interval">Intervalo:</label>
+                        <select class="form-control" id="interval">
+                            <option value="1m">1 Minuto</option>
+                            <option value="5m">5 Minutos</option>
+                            <option value="15m">15 Minutos</option>
+                            <option value="1h" selected>1 Hora</option>
+                            <option value="4h">4 Horas</option>
+                            <option value="1d">1 Dia</option>
+                            <option value="1w">1 Semana</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="auto-refresh" checked>
+                            <label class="form-check-label" for="auto-refresh">
+                                🔄 Atualização Automática (30s)
+                            </label>
+                        </div>
+                    </div>
+                    <button class="btn btn-primary btn-block" onclick="loadChart()" id="load-chart-btn">
+                        📊 Carregar Gráfico
+                    </button>
+                </div>
+
+                <div class="trading-panel">
+                    <h4>📈 Indicadores</h4>
+                    <div id="indicators-list"></div>
+                </div>
+
+                <div class="trading-panel">
+                    <h4>🤖 Automação de Trading</h4>
+                    <button class="btn btn-success btn-block" onclick="startTrading()" id="start-trading-btn">
+                        ▶️ Iniciar Trading
+                    </button>
+                    <button class="btn btn-danger btn-block" onclick="stopTrading()" id="stop-trading-btn" disabled>
+                        ⏹️ Parar Trading
+                    </button>
+                    <div class="mt-2" id="trading-status"></div>
+                    <div class="mt-3">
+                        <h5>💰 Saldo</h5>
+                        <div id="balance" class="small"></div>
+                    </div>
+                    <div class="mt-3">
+                        <h6>📋 Histórico de Trades</h6>
+                        <div id="trade-history" class="small"></div>
+                    </div>
+                    <div class="mt-3">
+                        <h6>📊 Performance</h6>
+                        <div id="performance" class="small">
+                            <div>Trades Hoje: <span id="trades-today" class="badge bg-info">0</span></div>
+                            <div>P&L: <span id="pnl" class="badge bg-success">0.00</span></div>
+                            <div>Taxa de Acerto: <span id="win-rate" class="badge bg-warning">0%</span></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Container -->
+    <div class="position-fixed bottom-0 right-0 p-3" style="z-index: 11">
+        <div id="toast-container"></div>
+    </div>
+
+    <!-- CDN Libraries with fallback -->
+    <script src="https://cdn.jsdelivr.net/npm/vue@2"></script>
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+
+    <!-- Library loading verification -->
+    <script>
+        window.addEventListener('load', function() {
+            // Check if libraries loaded correctly
+            const missingLibraries = [];
+
+            if (typeof Chart === 'undefined') {
+                missingLibraries.push('Chart.js');
+            }
+            if (typeof axios === 'undefined') {
+                missingLibraries.push('Axios');
+            }
+            if (typeof bootstrap === 'undefined') {
+                missingLibraries.push('Bootstrap');
+            }
+
+            if (missingLibraries.length > 0) {
+                console.error('Bibliotecas não carregadas:', missingLibraries);
+                alert('Erro: As seguintes bibliotecas não puderam ser carregadas: ' + missingLibraries.join(', ') +
+                      '\nPossíveis causas:\n• Firewall bloqueando acesso a CDNs\n• Problemas de conectividade\n• Cache do navegador\n\nTente:\n1. Recarregar a página (Ctrl+F5)\n2. Verificar configurações do firewall\n3. Limpar cache do navegador');
+            }
+        });
+    </script>
+
+<script>
+    const API_BASE = 'http://localhost:8000';
+
+        let chart = null;
+        let indicators = {};
+        let autoRefreshInterval = null;
+        let currentSymbol = 'BTCUSDT';
+
+        // Toast notification function
+        function showToast(message, type = 'info') {
+            try {
+                // Fallback se Bootstrap não estiver carregado
+                if (typeof bootstrap === 'undefined') {
+                    alert(`${type.toUpperCase()}: ${message}`);
+                    return;
+                }
+
+                const toastContainer = document.getElementById('toast-container');
+                const toast = document.createElement('div');
+                toast.className = `toast align-items-center text-white bg-${type === 'success' ? 'success' : type === 'error' ? 'danger' : 'primary'} border-0`;
+                toast.setAttribute('role', 'alert');
+                toast.innerHTML = `
+                    <div class="d-flex">
+                        <div class="toast-body">${message}</div>
+                        <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+                    </div>
+                `;
+                toastContainer.appendChild(toast);
+
+                const bsToast = new bootstrap.Toast(toast);
+                bsToast.show();
+
+                // Remove toast after it's hidden
+                toast.addEventListener('hidden.bs.toast', () => {
+                    toast.remove();
+                });
+            } catch (error) {
+                console.error('Erro ao mostrar toast:', error);
+                alert(`${type.toUpperCase()}: ${message}`);
+            }
+        }
+
+        // Loading state functions
+        function addLoadingState(elementId) {
+            const element = document.getElementById(elementId);
+            if (element) {
+                element.classList.add('loading');
+                element.disabled = true;
+            }
+        }
+
+        function removeLoadingState(elementId) {
+            const element = document.getElementById(elementId);
+            if (element) {
+                element.classList.remove('loading');
+                element.disabled = false;
+            }
+        }
+
+        // Save/load settings functions
+        function saveSettings() {
+            try {
+                const settings = {
+                    symbol: document.getElementById('symbol').value,
+                    interval: document.getElementById('interval').value,
+                    autoRefresh: document.getElementById('auto-refresh').checked
+                };
+                localStorage.setItem('tradingSettings', JSON.stringify(settings));
+            } catch (error) {
+                console.error('Erro ao salvar configurações:', error);
+            }
+        }
+
+        function loadSettings() {
+            try {
+                const settings = JSON.parse(localStorage.getItem('tradingSettings') || '{}');
+                if (settings.symbol) document.getElementById('symbol').value = settings.symbol;
+                if (settings.interval) document.getElementById('interval').value = settings.interval;
+                if (settings.autoRefresh !== undefined) document.getElementById('auto-refresh').checked = settings.autoRefresh;
+            } catch (error) {
+                console.error('Erro ao carregar configurações:', error);
+            }
+        }
+
+        async function loadSymbols() {
+            try {
+                const response = await axios.get(`${API_BASE}/api/symbols`);
+                const symbolSelect = document.getElementById('symbol');
+                const currentValue = symbolSelect.value;
+
+                symbolSelect.innerHTML = response.data.symbols.map(symbol =>
+                    `<option value="${symbol}">${symbol.replace('USDT', '/USDT')}</option>`
+                ).join('');
+
+                // Restore previous selection if exists
+                if (response.data.symbols.includes(currentValue)) {
+                    symbolSelect.value = currentValue;
+                }
+            } catch (error) {
+                console.error('Erro ao carregar símbolos:', error);
+            }
+        }
+
+        async function loadIndicators() {
+            try {
+                const response = await axios.get(`${API_BASE}/api/indicators`);
+                indicators = response.data;
+                renderIndicators();
+            } catch (error) {
+                console.error('Erro ao carregar indicadores:', error);
+                showToast('Erro ao carregar indicadores', 'error');
+            }
+        }
+
+        function renderIndicators() {
+            const container = document.getElementById('indicators-list');
+            container.innerHTML = '';
+            for (const [key, config] of Object.entries(indicators)) {
+                const div = document.createElement('div');
+                div.className = 'indicator-toggle';
+                div.innerHTML = `
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="${key}" ${config.enabled ? 'checked' : ''} onchange="toggleIndicator('${key}')">
+                        <label class="form-check-label" for="${key}">${key}</label>
+                    </div>
+                `;
+                container.appendChild(div);
+            }
+        }
+
+        async function toggleIndicator(indicator) {
+            indicators[indicator].enabled = !indicators[indicator].enabled;
+            try {
+                await axios.put(`${API_BASE}/api/indicators/${indicator}`, indicators[indicator]);
+                loadChart();
+                showToast(`${indicator} ${indicators[indicator].enabled ? 'ativado' : 'desativado'}`, 'success');
+            } catch (error) {
+                console.error('Erro ao atualizar indicador:', error);
+                showToast('Erro ao atualizar indicador', 'error');
+            }
+        }
+
+        async function loadChart() {
+            const symbol = document.getElementById('symbol').value;
+            const interval = document.getElementById('interval').value;
+            currentSymbol = symbol;
+
+            // Verificar se Chart.js está disponível
+            if (typeof Chart === 'undefined') {
+                const errorMsg = 'Erro: Chart.js não foi carregado. Verifique sua conexão e firewall.';
+                console.error(errorMsg);
+                showToast(errorMsg, 'error');
+                return;
+            }
+
+            // Verificar se Axios está disponível
+            if (typeof axios === 'undefined') {
+                const errorMsg = 'Erro: Axios não foi carregado. Verifique sua conexão e firewall.';
+                console.error(errorMsg);
+                showToast(errorMsg, 'error');
+                return;
+            }
+
+            try {
+                addLoadingState('load-chart-btn');
+                showToast('Carregando dados...', 'info');
+
+                const [klinesResponse, indicatorsResponse] = await Promise.all([
+                    axios.get(`${API_BASE}/api/klines/${symbol}?interval=${interval}`),
+                    axios.get(`${API_BASE}/api/indicators/${symbol}?interval=${interval}`)
+                ]);
+
+                const klines = klinesResponse.data;
+                const indicatorData = indicatorsResponse.data;
+
+                createCandlestickChart(klines, indicatorData);
+
+                showToast(`Dados carregados para ${symbol}`, 'success');
+
+                // Verificar se saveSettings existe antes de chamar
+                if (typeof saveSettings === 'function') {
+                    saveSettings();
+                }
+            } catch (error) {
+                console.error('Erro ao carregar dados do gráfico:', error);
+                let errorMessage = 'Erro ao carregar dados do gráfico: ';
+
+                if (error.code === 'ERR_NETWORK') {
+                    errorMessage += 'Erro de rede. Verifique se o backend está rodando em http://localhost:8000';
+                } else if (error.response) {
+                    errorMessage += `Erro ${error.response.status}: ${error.response.statusText}`;
+                } else {
+                    errorMessage += error.message;
+                }
+
+                showToast(errorMessage, 'error');
+            } finally {
+                removeLoadingState('load-chart-btn');
+            }
+        }
+
+        function createCandlestickChart(klines, indicatorData) {
+            const ctx = document.getElementById('chart').getContext('2d');
+
+            const labels = klines.map(k => new Date(k.timestamp));
+            const data = klines.map(k => k.close);
+
+            // Criar dataset de linha para o preço
+            const datasets = [{
+                label: symbol,
+                data: klines.map(k => k.close),
+                borderColor: '#00D4AA',
+                backgroundColor: 'rgba(0, 212, 170, 0.1)',
+                borderWidth: 2,
+                fill: true,
+                tension: 0.1
+            }];
+
+            // Adicionar indicadores se habilitados
+            for (const [key, data] of Object.entries(indicatorData)) {
+                if (indicators[key] && indicators[key].enabled) {
+                    datasets.push({
+                        label: key,
+                        data: data.map(d => d.value),
+                        borderColor: getIndicatorColor(key),
+                        borderWidth: 1,
+                        fill: false,
+                        pointRadius: 0
+                    });
+                }
+            }
+
+            if (chart) {
+                chart.destroy();
+            }
+
+            chart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: datasets
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            display: true,
+                            position: 'top'
+                        },
+                        title: {
+                            display: true,
+                            text: `${currentSymbol} - Gráfico de Preços`
+                        }
+                    },
+                    scales: {
+                        x: {
+                            type: 'time',
+                            time: {
+                                displayFormats: {
+                                    hour: 'HH:mm',
+                                    day: 'dd/MM'
+                                }
+                            },
+                            title: {
+                                display: true,
+                                text: 'Tempo'
+                            }
+                        },
+                        y: {
+                            title: {
+                                display: true,
+                                text: 'Preço'
+                            }
+                        }
+                    },
+                    interaction: {
+                        intersect: false,
+                        mode: 'index'
+                    }
+                }
+            });
+        }
+
+        function getIndicatorColor(indicator) {
+            const colors = {
+                'SMA': '#FF6B6B',
+                'EMA': '#4ECDC4',
+                'RSI': '#45B7D1',
+                'MACD': '#96CEB4',
+                'BOLL': '#FFEAA7'
+            };
+            return colors[indicator] || '#FFA726';
+        }
+
+        function toggleAutoRefresh() {
+            const autoRefresh = document.getElementById('auto-refresh').checked;
+
+            if (autoRefresh) {
+                autoRefreshInterval = setInterval(() => {
+                    loadChart();
+                    loadBalance();
+                    loadTradeHistory();
+                    updatePerformance();
+                }, 30000);
+                showToast('Atualização automática ativada', 'info');
+            } else {
+                if (autoRefreshInterval) {
+                    clearInterval(autoRefreshInterval);
+                    autoRefreshInterval = null;
+                }
+                showToast('Atualização automática desativada', 'info');
+            }
+        }
+
+        async function startTrading() {
+            try {
+                const response = await axios.post(`${API_BASE}/api/trading/start`);
+                showToast(response.data.message, 'success');
+                updateTradingStatus();
+                loadTradeHistory();
+                document.getElementById('start-trading-btn').disabled = true;
+                document.getElementById('stop-trading-btn').disabled = false;
+            } catch (error) {
+                console.error('Erro ao iniciar trading:', error);
+                showToast('Erro ao iniciar trading: ' + (error.response?.data?.detail || error.message), 'error');
+            }
+        }
+
+        async function stopTrading() {
+            try {
+                const response = await axios.post(`${API_BASE}/api/trading/stop`);
+                showToast(response.data.message, 'success');
+                updateTradingStatus();
+                loadTradeHistory();
+                document.getElementById('start-trading-btn').disabled = false;
+                document.getElementById('stop-trading-btn').disabled = true;
+            } catch (error) {
+                console.error('Erro ao parar trading:', error);
+                showToast('Erro ao parar trading: ' + (error.response?.data?.detail || error.message), 'error');
+            }
+        }
+
+        async function updateTradingStatus() {
+            try {
+                const response = await axios.get(`${API_BASE}/api/trading/status`);
+                const status = response.data;
+                const statusDiv = document.getElementById('trading-status');
+
+                statusDiv.innerHTML = `
+                    <div class="small">
+                        <strong>Status:</strong> ${status.active ? '<span class="text-success">Ativo</span>' : '<span class="text-danger">Parado</span>'}<br>
+                        <strong>Par:</strong> ${status.symbol}<br>
+                        <strong>Modo:</strong> ${status.paper_trading ? 'Simulação' : 'Real'}
+                    </div>
+                `;
+
+                // Update button states
+                document.getElementById('start-trading-btn').disabled = status.active;
+                document.getElementById('stop-trading-btn').disabled = !status.active;
+            } catch (error) {
+                console.error('Erro ao obter status do trading:', error);
+            }
+        }
+
+        async function loadBalance() {
+            try {
+                const response = await axios.get(`${API_BASE}/api/balance`);
+                const balanceDiv = document.getElementById('balance');
+                balanceDiv.innerHTML = Object.entries(response.data)
+                    .map(([asset, amount]) => `<div>${asset}: <strong>${amount.toFixed(4)}</strong></div>`)
+                    .join('');
+            } catch (error) {
+                console.error('Erro ao carregar saldo:', error);
+            }
+        }
+
+        async function loadTradeHistory() {
+            try {
+                const response = await axios.get(`${API_BASE}/api/trade_history`);
+                const historyDiv = document.getElementById('trade-history');
+                if (response.data.trades && response.data.trades.length > 0) {
+                    historyDiv.innerHTML = response.data.trades.slice(-10).map(trade => {
+                        const signalColor = trade.signal === 'BUY' ? 'success' : 'danger';
+                        return `<div class="small border-bottom py-1">
+                            <strong class="text-${signalColor}">${trade.signal}</strong> ${trade.symbol} -
+                            ${trade.paper_trading ? 'Simulação' : 'Real'} -
+                            ${new Date(trade.timestamp).toLocaleTimeString()}
+                        </div>`;
+                    }).join('');
+                } else {
+                    historyDiv.innerHTML = `<div class="small text-muted">Nenhum trade realizado</div>`;
+                }
+            } catch (error) {
+                console.error('Erro ao carregar histórico:', error);
+                document.getElementById('trade-history').innerHTML = `<div class="small text-danger">Erro ao carregar histórico</div>`;
+            }
+        }
+
+        async function updatePerformance() {
+            try {
+                const response = await axios.get(`${API_BASE}/api/trade_history`);
+                const trades = response.data.trades || [];
+
+                // Calculate today's trades
+                const today = new Date().toDateString();
+                const todayTrades = trades.filter(trade =>
+                    new Date(trade.timestamp).toDateString() === today
+                );
+
+                document.getElementById('trades-today').textContent = todayTrades.length;
+
+                // Simple P&L calculation (placeholder)
+                document.getElementById('pnl').textContent = '0.00';
+                document.getElementById('win-rate').textContent = '0%';
+
+            } catch (error) {
+                console.error('Erro ao atualizar performance:', error);
+            }
+        }
+
+        // Event listeners
+        document.getElementById('auto-refresh').addEventListener('change', toggleAutoRefresh);
+        document.getElementById('symbol').addEventListener('change', loadChart);
+        document.getElementById('interval').addEventListener('change', loadChart);
+
+        // Initialize
+        async function initialize() {
+            try {
+                // Carregar configurações salvas
+                loadSettings();
+
+                await Promise.all([
+                    loadSymbols(),
+                    loadIndicators(),
+                    loadBalance(),
+                    updateTradingStatus(),
+                    loadTradeHistory(),
+                    updatePerformance()
+                ]);
+
+                // Carregar gráfico se as configurações estiverem salvas
+                const settings = JSON.parse(localStorage.getItem('tradingSettings') || '{}');
+                if (settings.symbol || settings.interval) {
+                    setTimeout(loadChart, 500); // Pequeno delay para garantir que tudo carregou
+                }
+
+                // Start auto refresh if checkbox is checked
+                toggleAutoRefresh();
+
+                showToast('Sistema inicializado com sucesso!', 'success');
+            } catch (error) {
+                console.error('Erro na inicialização:', error);
+                showToast('Erro na inicialização do sistema: ' + error.message, 'error');
+            }
+        }
+
+        // Start the application
+        document.addEventListener('DOMContentLoaded', async function() {
+            initialize();
+        });
+    </script>
+</body>
+</html>
